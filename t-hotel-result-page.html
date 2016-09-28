@@ -1,0 +1,257 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../t-sessionstorage/t-sessionstorage.html">
+<link rel="import" href="../t-list/t-list.html">
+<link rel="import" href="../t-notify/t-notify.html">
+<link rel="import" href="../t-search-overlay/t-search-overlay.html">
+<link rel="import" href="../t-header/t-header-search-recap.html">
+<link rel="import" href="../t-text-container/travel-element-styles.html">
+<link rel="import" href="../t-behavior/t-page-behavior.html">
+<link rel="import" href="../t-behavior/t-session-behavior.html"/>
+<link rel="import" href="../t-hotel-result-item/t-hotel-itinerary-item.html"/>
+
+<!--
+A comment describing this element
+
+Example:
+
+    <t-hotel-result-page></t-hotel-result-page>
+
+Example:
+
+    <t-hotel-result-page>
+      <h2>Hello t-hotel-result-page</h2>
+    </t-hotel-result-page>
+
+@demo demo/index.html
+-->
+<dom-module id="t-hotel-result-page">
+    <template>
+        <style>
+            :host {
+                display: block;
+            }            
+        </style>
+
+        <t-notify id="notify"></t-notify>
+
+        <content></content>
+
+        <t-search-overlay icon="[[hotelIcon]]" id="loadingOverlay">
+            <div class="data">
+                <div class="font-12 text-center secondary-text overlayData">
+                    <t-header-search-recap recap-data="{{hotelRecapData}}" hide-edit-icon></t-header-search-recap>
+                </div>
+            </div>
+            <div class="footer">
+                <img src="[[siteLogoUrl]]" title="[[siteLogoUrl]]" alt="" style="width:232px;">
+            </div>
+        </t-search-overlay>
+
+        <t-list 
+            id="list"
+            data-api="[[apiBaseUrl]]api/hotel/results/[[searchId]]/rates?$top=20&token=[[authToken]]&$select=Id,Name,Rating,Address,StayDuration,Deal,IsPostPaid,MinFare,Fare,HeroImageUrl,Source,PhotoUrls"
+            filter-api="[[apiBaseUrl]]api/hotel/filter/[[searchId]]/rates?token=[[authToken]]"
+            filter-results-api="[[apiBaseUrl]]api/hotel/results/filter/[[searchId]]/rates?$top=20&token=[[authToken]]&$select=Id,Name,Rating,Address,StayDuration,Deal,IsPostPaid,MinFare,Fare,HeroImageUrl,Source,PhotoUrls"
+            with-filter
+            with-sorting
+            filter-search-label="[[filterSearchLabel]]"
+            filter-display-settings="[[filterDisplaySettings]]"
+            search-icon="[[searchIcon]]"
+            filter-icon="[[filterIcon]]"
+            disable-filter-icon="[[disableFilterIcon]]"
+            token-param="inventories"
+            sort-params="[[sortParams]]"
+            currency="[[currency]]"
+            no-results-found-message="[[noResultsFoundMessage]]"
+            no-results-filtered-message="[[noResultsFilteredMessage]]"
+            on-list-population="_onListPopulation"
+            on-item-selected="_onHotelSelection"
+            on-redirect-click="_handleRedirection">
+            <template>
+                <t-hotel-itinerary-item 
+                    loading-icon="maps:hotel" 
+                    itinerary="{{item}}">
+                </t-hotel-itinerary-item>        
+            </template>
+        </t-list>
+
+        <t-sessionstorage
+            id="sessionStore"
+            api-url-format="[[apiUrlFormat]]"
+            on-t-sessionstorage-load-success="_onSessionGet"
+            on-t-sessionstorage-save-success="_onSessionSave">
+        </t-sessionstorage>
+    </template>
+    <script>
+        (function () {
+
+            Polymer({
+
+                is: 't-hotel-result-page',
+
+                behaviors: [
+                    TravelNxt.Behaviors.PageBehavior,
+                    TravelNxt.Behaviors.SessionBehavior
+                ],
+
+                properties: {
+                    /*
+                     * This holds the value of default hotel icon
+                     */
+                    hotelIcon: {
+                        type: String,
+                        value: 'maps:hotel'
+                    },
+
+                    hotelRecapData: {
+                        type: Object                        
+                    },
+
+                    /**
+                     * No results found message
+                     * @type {String}
+                     */
+                    noResultsFoundMessage: {
+                        type: String,
+                        value: "We could not find any hotels for your search."
+                    },
+
+                    /**
+                     * No results found after applying filters message
+                     * @type {String}
+                     */
+                    noResultsFilteredMessage: {
+                        type: String,
+                        value: 'We could not find any hotels for the filters you have applied.'
+                    },
+
+                    /**
+                     * This is used to display label in placeholder of search filter
+                     * @type {String}
+                     */
+                    filterSearchLabel: {
+                        type: String,
+                        value: 'Search by hotel name'
+                    },
+
+                    /**
+                     * This property defines the sort params
+                     * @type {Array}
+                     */
+                    sortParams: {
+                        type: Array,
+                        value: function () {
+                            return [{ 
+                                "key": "Name", 
+                                "value": "$orderby=Name" 
+                            }, { 
+                                "key": "Rating", 
+                                "value": "$orderby=Rating" , 
+                                "default": true
+                            }, { 
+                                "key": "Price", 
+                                "value": "$orderby=MinFare/Fare/Amount"
+                            }];
+                        }
+                    },
+
+                    /**
+                     * This property sets the filter custom icon
+                     * @type {String}
+                     */
+                    filterIcon: String,
+
+                    /**
+                     * This Property sets search custom icon
+                     * @type {String}
+                     */
+                    searchIcon: String,
+
+                    /**
+                     * stores the value of filter display setting
+                     */
+                    filterDisplaySettings: {
+                        type: Array,
+                        value: ['showCategoryCount']
+                    }
+                },
+
+                observers: [
+                    '__pageLoad(visible)',
+                    '__updatePage(searchId)'
+                ],
+
+                listeners: {
+                },
+
+                /**
+                 * This is observer method and executed every time `visible` or `searchId` changes
+                 * @param  {String} visible
+                 * @param  {String} searchId
+                 * @return {Void}
+                 */
+                __pageLoad: function (visible) {
+                    if (!visible) {
+                        return;
+                    }
+
+                    this._syncSession();
+                },
+
+                __updatePage: function (searchId) {
+
+                    if (!searchId) {
+                        this.fire('go-to-search');
+                        return;
+                    }
+
+                    this.$.loadingOverlay.active = true;
+                    this.$.loadingOverlay.value = 0;
+                    this.$.list.generateList();
+                    this.$.list.$.filter.generateFilter();
+                },
+
+                _syncSession: function () {
+                    this._data = [{
+                        key: 'Hotel_Search_Criteria',
+                        propertyName: 'searchCriteria'
+                    },{
+                        key: 'Hotel_Search_Id',
+                        propertyName: 'searchId'
+                    }];
+                    this.getSession();
+                },
+
+                /**
+                 * This is observer method and executed when list is populated in `t-list`
+                 * @return {Void}
+                 */
+                _onListPopulation: function () {
+                    //ending the overlay
+                    this.$.loadingOverlay.value = 100;
+                },
+
+                _onHotelSelection: function (e) {
+                    if (!e || !e.detail) {
+                        return;
+                    }
+
+                    if (!this.itinerary || (this.itinerary.id !== e.detail.id)) {
+
+                        this.itinerary = e.detail;
+
+                        this._data = [{
+                            key: 'Hotel_Itinerary',
+                            propertyName: 'itinerary',
+                            value: this.itinerary
+                        }];
+
+                        this.setSession();
+                    }
+
+                    this.fire('hotel-select', this.itinerary);
+                }
+            });
+        })();
+    </script>
+</dom-module>

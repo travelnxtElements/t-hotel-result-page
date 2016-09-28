@@ -1,0 +1,22 @@
+{
+  "name": "t-hotel-result-page",
+  "description": "Page component for hotel result page",
+  "main": "t-hotel-result-page.html",
+  "dependencies": {
+    "polymer": "Polymer/polymer#^1.4.0",
+    "t-sessionstorage": "travelnxtElements/t-sessionstorage#^1.0.0",
+    "t-list": "atomelements/t-list#^1.1.25",
+    "t-notify": "atomelements/t-notify#^1.1.1",
+    "t-search-overlay": "travelnxtelements/t-search-overlay#^1.4.1",
+    "t-header": "travelnxtelements/t-header#^1.5.11",
+    "t-text-container": "travelnxtElements/t-text-container#^1.0.0",
+    "t-behavior": "travelnxtelements/t-behavior#^1.0.0",
+    "t-hotel-result-item": "travelnxtelements/t-hotel-result-item#^1.1.0"
+  },
+  "devDependencies": {
+    "iron-component-page": "PolymerElements/iron-component-page#^1.0.0",
+    "iron-demo-helpers": "PolymerElements/iron-demo-helpers#^1.0.0",
+    "web-component-tester": "^4.0.0",
+    "webcomponentsjs": "webcomponents/webcomponentsjs#^0.7.0"
+  }
+}
