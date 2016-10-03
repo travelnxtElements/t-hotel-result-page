@@ -1,0 +1,384 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../t-text-container/travel-element-styles.html">
+<link rel="import" href="../t-filter/t-filter.html">
+<link rel="import" href="../t-notify/t-notify.html">
+<link rel="import" href="../t-behavior/t-page-behavior.html">
+<link rel="import" href="../t-behavior/t-session-behavior.html"/>
+<link rel="import" href="../t-sessionstorage/t-sessionstorage.html">
+<link rel="import" href="../t-api-components/t-itinerary-list-api.html">
+<link rel="import" href="../t-hotel-result-item/t-hotel-result-item.html"/>
+
+<!--
+    A comment describing this element
+
+    Example:
+
+        <t-hotel-map-page></t-hotel-map-page>
+
+    Example:
+
+        <t-hotel-map-page>
+          <h2>Hello t-hotel-map-page</h2>
+        </t-hotel-map-page>
+
+    @demo demo/index.html
+-->
+<dom-module id="t-hotel-map-page">
+    <style>
+        :host {
+            display: block;
+        }
+        #resetMap {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            z-index: 8;
+            margin: 10px;
+        }
+        #resetMap paper-icon-button {
+            padding: 12px;
+            width: 48px;
+            height: 48px;
+        }
+    </style>
+
+    <template>
+
+        <t-notify id="notify"></t-notify>
+
+        <content></content>
+
+        <t-notify 
+        	message="We could not find selected itinerary, please select another." 
+        	active 
+        	type="error">        		
+    	</t-notify>
+
+        <div id="filterModal">
+            <t-filter
+                id="filter" 
+            	search-icon="[[searchIcon]]" 
+            	currency="[[currency]]" 
+            	search-label="[[filterSearchLabel]]" 
+            	filter-icon="[[filterIcon]]" 
+            	disable-filter-icon="[[disableFilterIcon]]" 
+            	opened
+            	class="flex"
+                filter-api="[[apiBaseUrl]]api/hotel/filter/[[searchId]]/rates?token=[[authToken]]"
+            	on-filter-change="_applyFilters" 
+            	results-paging-info="[[pagingInfo]]">            		
+        	</t-filter>
+        </div>
+
+        <div id="map-container">
+            <template is="dom-if" if="[[noResultsMatched]]">
+                <div class="section-small secondary-text font-12">
+                    <template is="dom-if" if="[[noResultFound]]">
+                        <div>We could not find any hotels for your search.</div>
+                        <div><a class="link-style" href="[[siteUrl]]hotel/" >modify search</a></div>
+                    </template>
+                    <template is="dom-if" if="[[noResultsFiltered]]">
+                        <div>We could not find any hotels for the filters you have applied.</div>
+                        <div><a class="link-style" href="[[siteUrl]]hotel/" >modify search</a> or <a class="link-style" href="javascript:void(0);" on-click="_showFilters" >modify filter</a></div>
+                    </template>
+                    <template is="dom-if" if="[[noResultsFilteredForSearchTerm]]">
+                        <div>We could not find any hotel names containing '[[searchFilterVal]]’.</div>
+                        <div>Modify the search term or <a class="link-style" href="javascript:void(0);" on-click="_resetSearchFilter" >reset.</a></div>
+                    </template>
+                </div>
+            </template>
+            <template is="dom-if" if="[[showMap]]">
+                <google-map 
+                    id="gMap" 
+                    latitude="{{_getGeoCode(searchCriteria.location.geoCode, 'latitude')}}" 
+                    map="{{map}}" 
+                    longitude="{{_getGeoCode(searchCriteria.location, 'longitude')}}" 
+                    style$="height: [[mapHeight]]px" 
+                    disable-default-ui 
+                    additional-map-options='{"zoomControl":true}' 
+                    single-info-window api-key="[[googleMapKey]]">
+                        <t-button 
+                            id="resetMap"  
+                            class="primary"  
+                            noink ico="maps:my-location" 
+                            only-icon 
+                            on-click="resetMap">                                
+                        </t-button>
+                        <template is="dom-repeat" items="{{results}}">
+                            <google-map-marker 
+                                latitude="{{_getGeoCode(item.geoCode, 'latitude')}}" 
+                                longitude="{{_getGeoCode(item.geoCode, 'longitude')}}">            
+                                    <t-hotel-result-item 
+                                        is-map-page 
+                                        itinerary$="{{item}}">
+                                    </t-hotel-result-item>  
+                            </google-map-marker>
+                    </template>
+                </google-map>
+            </template>
+        </div>
+
+        <t-itinerary-list-api
+            id="resultApi" 
+            loading="{{loading}}"
+            api-base-url="[[apiBaseUrl]]"
+            api-relative-url="api/hotel/results/[[searchId]]/rates?token=[[authToken]]&$select=Name,Rating,Address,GeoCode,Id,Deal,Fare,StayDuration"
+            auth-token="[[authToken]]"
+            last-response="[[lastResponse]]"
+            on-t-itinerary-list-api-success="_onResultSuccess"
+            on-t-itinerary-list-api-error="_onResultError">
+        </t-itinerary-list-api>
+
+        <t-itinerary-list-api
+            id="filterResultApi"
+            loading="{{loading}}"
+            api-base-url="[[apiBaseUrl]]"
+            api-relative-url="api/hotel/results/filter/[[searchId]]/rates?token=[[authToken]]&$select=Name,Rating,Address,HeroImageUrl,GeoCode,Id,Deal,Fare"
+            auth-token="[[authToken]]"
+            on-t-itinerary-list-api-success="_onResultSuccess"
+            on-t-itinerary-list-api-error="_onResultError">
+        </t-itinerary-list-api>
+
+        <t-sessionstorage
+            id="sessionStore"
+            api-url-format="[[apiUrlFormat]]"
+            on-t-sessionstorage-load-success="_onSessionGet"
+            on-t-sessionstorage-save-success="_onSessionSave">
+        </t-sessionstorage>
+    </template>
+    <script>
+        (function () {
+
+            Polymer({
+
+                is: 't-hotel-map-page',
+
+                behaviors: [
+                    TravelNxt.Behaviors.PageBehavior,
+                    TravelNxt.Behaviors.SessionBehavior
+                ],
+
+                properties: {
+                    /*
+                     * This holds the value of default hotel icon
+                     */
+                    hotelIcon: {
+                        type: String,
+                        value: 'maps:hotel'
+                    },
+
+                    /**
+                     * No results found message
+                     * @type {String}
+                     */
+                    noResultsFoundMessage: {
+                        type: String,
+                        value: "We could not find any hotels for your search."
+                    },
+
+                    /**
+                     * No results found after applying filters message
+                     * @type {String}
+                     */
+                    noResultsFilteredMessage: {
+                        type: String,
+                        value: 'We could not find any hotels for the filters you have applied.'
+                    },
+
+                    /**
+                     * This is used to display label in placeholder of search filter
+                     * @type {String}
+                     */
+                    filterSearchLabel: {
+                        type: String,
+                        value: 'Search by hotel name'
+                    },
+
+                    /**
+                     * This property sets the filter custom icon
+                     * @type {String}
+                     */
+                    filterIcon: {
+                        type: String
+                    },
+
+                    /**
+                     * This property sets the filter custom icon
+                     * @type {String}
+                     */
+                    disableFilterIcon: {
+                        type: String,
+                        value: 'close',
+                    },
+
+                    /**
+                     * This Property sets search custom icon
+                     * @type {String}
+                     */
+                    searchIcon: {
+                        type: String
+                    }
+
+                    /**
+                     * This Property holds value of google map key
+                     * @type {String}
+                     */
+                    googleMapKey: {
+                        type: String
+                    }
+                },
+
+                observers: [
+                    '__pageLoad(visible)'
+                ],
+
+                listeners: {
+                    'session-get-complete': '_updatePage'
+                },
+
+                /**
+                 * This is observer method and executed every time `visible` or `searchId` changes
+                 * @param  {String} visible
+                 * @param  {String} searchId
+                 * @return {Void}
+                 */
+                __pageLoad: function (visible) {
+                    if (!visible) {
+                        return;
+                    }
+
+                    this._syncSession();
+                },
+
+                _updatePage: function () {
+
+                    if (!this.searchId) {
+                        this.fire('go-to-search');
+                        return;
+                    }
+
+                    this.$.resultApi.generateRequest();
+                    this.$.filter.includeFilters = ["Price", "Rating", "Brand", "Hotel Name"];
+                    this.$.filter.generateFilter();
+                },
+
+                _onResultSuccess: function (e) {
+
+                    this.pagingInfo = e.detail.response.pagingInfo;
+
+                    if (!e.detail.response || !e.detail.response.status)
+                        _onResultError();
+
+                    else if (!e.detail.response.status.isSuccessful || !e.detail.response.inventories) {
+                        _onResultError();
+                    }
+
+                    else {
+                        this.results = e.detail.response.inventories;
+                        this.$.filter._getFilteredRatio(this.pagingInfo);
+                        this.$.filter._showHeader();
+                        this.showMap = true;
+                        this.noResultsMatched = false;
+                        setTimeout(function(){
+                            this.$$('gMap');.fitToMarkers = true;
+                        },1000);
+                    }
+                },
+
+                _onResultError: function (e) {
+                    //reset flags
+                    this.noResultsMatched = this.noResultFound = this.noResultsFiltered = this.noResultsFilteredForSearchTerm = this.showMap = false;
+
+                    //set proper flag
+                    if (this.$.filter.appliedFilters.length == 0) {
+                        this.noResultFound = true;
+                        this.$.filter._hideHeader();
+                    }
+                    else {
+                        var hasSearchFilter = false;
+                        var recentFilter = this.$.filter.appliedFilters[this.$.filter.appliedFilters.length - 1];
+                        
+                        if (recentFilter.type == 'Search' && recentFilter.value) {
+                            hasSearchFilter = true;
+                        }
+                        
+                        if (hasSearchFilter) {                
+                            this.noResultsFilteredForSearchTerm = true;
+                            this.searchFilterVal = this.$.filter.searchVal;
+                        }
+                        else {
+                            this.noResultsFiltered = true;
+                            this.$.filter._hideHeader();
+                        }            
+                    }
+                    this.noResultsMatched = true;                    
+                },
+
+                _syncSession: function () {
+                    this._data = [{
+                        key: 'Hotel_Search_Criteria',
+                        propertyName: 'searchCriteria'
+                    },{
+                        key: 'Hotel_Search_Id',
+                        propertyName: 'searchId'
+                    }];
+                    this.getSession();
+                },
+
+                setMapHeight: function () {
+                    var gMap = this.$$('gMap');
+                    
+                    if (gMap) {
+                        this.mapHeight = (window.innerHeight - gMap.offsetTop);
+                    }
+                    else {
+                        setTimeout(function () {
+                            this.setMapHeight();
+                        }, 1000);
+                    }
+                    if (this.map) {
+                        google.maps.event.trigger(this.map, "resize");
+                    }
+                },
+
+                _onHotelSelection: function (e) {
+                    if (!e || !e.detail) {
+                        return;
+                    }
+
+                    if (!this.itinerary || (this.itinerary.id !== e.detail.id)) {
+
+                        this.itinerary = e.detail;
+
+                        this._data = [{
+                            key: 'Hotel_Itinerary',
+                            propertyName: 'itinerary',
+                            value: this.itinerary
+                        }];
+
+                        this.setSession();
+                    }
+
+                    this.fire('hotel-select', this.itinerary);
+                },
+
+                _showFiltersL: function () {
+                    _templatizer.$.filter._openModal();
+                },
+
+                _resetSearchFilter: function () {
+                    _templatizer.$.filter._removeSearchFilter();
+                },
+
+                _getGeoCode: function (geoCode, type) {
+                    if (type.toLowerCase() == 'latitude') {
+                        return geoCode.split(',')[0];
+                    }
+                    else {
+                        return geoCode.split(',')[1];
+                    }
+                }
+            });
+        })();
+    </script>
+</dom-module>
